@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Only people whose (lower-case) email has a document in the `allowedUsers` collection may use DPR cloud save.
+    // Creating a Firebase login alone is not enough, so nobody can join by signing up themselves.
+    function allowedUser() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email));
+    }
+
+    match /rigs/{rig}/dprs/{docId} {
+      allow read: if allowedUser();
+
+      allow create, update: if allowedUser()
+        && rig in ['NG-2000-1', 'NG-2000-2', 'NG-2000-3']
+        && request.resource.data.keys().hasOnly(['rig', 'dprNo', 'fromDT', 'toDT', 'payload', 'deleted', 'updatedBy', 'clientSavedAt', 'updatedAt'])
+        && request.resource.data.rig == rig
+        && request.resource.data.updatedAt == request.time      // must be stamped by the server
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() < 900000;
+
+      // DPRs are never hard-deleted from the app; a delete is stored as deleted = true.
+      allow delete: if false;
+    }
+
+    // The allow-list itself can only be edited from the Firebase console.
+    match /allowedUsers/{email} {
+      allow read, write: if false;
+    }
+  }
+}

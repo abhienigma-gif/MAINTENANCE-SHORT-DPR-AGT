@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b3d62">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DPR">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Maintenance Short DPR</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+ <div class="hrow">
+  <div class="htitle"><h1>MAINTENANCE SHORT DPR</h1><div class="sub">New Generation Rig • <span id="rigName">—</span></div></div>
+  <button type="button" id="cloudChip" class="chip">…</button>
+ </div>
+</header>
+
+<main id="app">
+<section class="card">
+<h2>1. DPR CONTROL / RIG DETAILS</h2>
+<div class="grid">
+<div class="field"><label>DPR No.</label><input id="dprNo" type="text"></div>
+<div class="field"><label>RIG</label><input id="rig" class="readonly" readonly></div>
+<div class="field"><label>FROM DATE & TIME</label><input id="fromDT" type="datetime-local"></div>
+<div class="field"><label>TO DATE & TIME</label><input id="toDT" type="datetime-local"></div>
+<div class="field"><label>SPUD DATE</label><input id="spudDate" type="date"></div>
+<div class="field"><label>TARGET DEPTH</label><input id="targetDepth" type="text"></div>
+<div class="field"><label>CURRENT DEPTH</label><input id="currentDepth" type="text"></div>
+<div class="field"><label>CURRENT OPERATION</label><input id="currentOperation" type="text"></div>
+<div class="field"><label>RIG SHUTDOWN STATUS</label><select id="shutdown"><option value="">Select</option><option>YES</option><option>NO</option></select></div>
+<div class="field"><label>Reason</label><input id="shutdownReason" type="text"></div>
+</div>
+</section>
+
+<section class="card"><h2>2. CRITICAL EQUIPMENT STATUS</h2><div id="equipment"></div></section>
+<section class="card"><h2>3. HVAC STATUS</h2><div id="hvac"></div></section>
+
+<section class="card"><h2>4. CRITICAL OPERATIONAL PARAMETERS</h2><div class="grid">
+<div class="field"><label>Total Energy Generated (MWHr)</label><input id="energy" inputmode="decimal"></div>
+<div class="field"><label>Total HSD Consumed – Power Pack (KL)</label><input id="hsdPP" inputmode="decimal"></div>
+<div class="field"><label>Total HSD Issued – DSA Genset (KL)</label><input id="hsdDSA" inputmode="decimal"></div>
+<div class="field"><label>HSD Issued to Other Dept (KL)</label><input id="hsdOther" inputmode="decimal"></div>
+<div class="field"><label>POL Consumption (Ltr)</label><input id="pol" inputmode="decimal"></div>
+<div class="field"><label>Grease Consumption (Kg)</label><input id="grease" inputmode="decimal"></div>
+<div class="field"><label>Air Pressure (Kg/cm²)</label><input id="air" inputmode="decimal"></div>
+</div></section>
+
+<section class="card"><h2>5. MAINTENANCE JOB / ISSUE — EQUIPMENT SPECIFIC</h2>
+<div id="maintenanceRows"></div>
+<button type="button" class="add" id="addMaintenance">＋ Add Maintenance Job</button>
+</section>
+
+<section class="card"><h2>6. GENERIC JOBS CARRIED OUT</h2><div id="genericRows"></div><button type="button" class="add" id="addGeneric">＋ Add Generic Job</button></section>
+<section class="card"><h2>7. INVENTORY / REQUIREMENT</h2>
+<div class="field"><label>URGENT / CRITICAL REQUIREMENT</label><textarea id="criticalRequirement" placeholder="Enter Sr. No. and requirement as required by the team"></textarea></div>
+<div class="field" style="margin-top:10px"><label>MATERIALS RECEIVED FROM BASE</label><textarea id="materialsReceived" placeholder="Enter Sr. No. and materials received as required by the team"></textarea></div>
+<div class="field" style="margin-top:10px"><label>MATERIALS SENT TO BASE</label><textarea id="materialsSent" placeholder="Enter Sr. No. and materials sent as required by the team"></textarea></div>
+</section>
+
+<section class="card"><h2>8. CREW DETAILS</h2><div class="grid">
+<div class="field"><label>DAY SHIFT</label><textarea id="dayCrew"></textarea></div>
+<div class="field"><label>NIGHT SHIFT</label><textarea id="nightCrew"></textarea></div>
+</div></section>
+</main>
+
+<div class="bottom">
+<button type="button" class="primary" id="newDpr">＋ New DPR</button>
+<button type="button" class="primary" id="save">💾 Save</button>
+<button type="button" class="secondary" id="history">History</button>
+<button type="button" class="primary" id="whatsapp">💬 WhatsApp</button>
+</div>
+
+<!-- History -->
+<div class="modal" id="historyModal"><div class="modal-box">
+ <div class="modal-head"><h2 style="margin:0">DPR History <span class="small" id="historyRig"></span></h2><button type="button" class="close-btn" id="closeHistory">Close</button></div>
+ <div id="historyList"></div>
+</div></div>
+
+<!-- Cloud & settings -->
+<div class="modal" id="cloudModal"><div class="modal-box">
+ <div class="modal-head"><h2 style="margin:0">Cloud &amp; Settings</h2><button type="button" class="close-btn" id="closeCloud">Close</button></div>
+
+ <h3>Rig</h3>
+ <div class="field"><select id="rigSelect"></select></div>
+
+ <h3>Cloud save</h3>
+ <p class="small" id="cloudNote"></p>
+ <div id="loginBox">
+  <div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
+  <div class="field" style="margin-top:8px"><label>Password</label><input id="loginPass" type="password" autocomplete="current-password"></div>
+  <p class="small err" id="loginErr" hidden></p>
+  <button type="button" class="primary wide" id="loginBtn">Sign in</button>
+ </div>
+ <div id="accountBox">
+  <p style="margin:0 0 8px">Signed in as <b id="accountEmail"></b></p>
+  <div class="btnrow"><button type="button" class="primary" id="syncBtn">Sync now</button><button type="button" class="secondary" id="logoutBtn">Sign out</button></div>
+ </div>
+ <p class="small" id="syncInfo"></p>
+
+ <h3>Install on phone</h3>
+ <p class="small" id="installNote"></p>
+ <button type="button" class="add wide" id="installBtn" hidden>Install app</button>
+ <p class="small" style="margin-top:14px">Version <span id="appVersion"></span></p>
+</div></div>
+
+<!-- First run: choose rig -->
+<div class="modal" id="rigModal"><div class="modal-box">
+ <h2>Select your rig</h2>
+ <p class="small">This is remembered on this phone. You can change it later from the cloud button at the top.</p>
+ <div id="rigChoices"></div>
+</div></div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="cloud.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
