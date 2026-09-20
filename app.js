@@ -3,7 +3,7 @@
    Every DPR is stored on the phone first (IndexedDB), then uploaded to the cloud whenever
    the phone is signed in and online. Records carry a `dirty` flag until the upload succeeds. */
 
-const VERSION = "1.1.8";
+const VERSION = "1.1.9";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
 // With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
 // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
@@ -213,10 +213,12 @@ $("newDpr").onclick = () => {
 $("fromDT").addEventListener("change", updateDprNo);
 $("toDT").addEventListener("change", updateDprNo);
 
+// When a DPR was last saved: Firebase's time once it is uploaded, the phone's time before that. Used to show and to sort.
+const savedIso = r => String(r.dirty || !r.cloudAt ? new Date(r.savedAt || 0).toISOString() : r.cloudAt).replace(/(\.\d{3})\d+/, "$1");
 async function showHistory() {
   const list = $("historyList"); $("historyRig").textContent = VIEWER ? "• all rigs" : "• " + RIG; // a view-only login sees every rig together
   let rows;
-  try { rows = (await dbAll()).filter(r => (VIEWER || r.rig === RIG) && !r.deleted).sort((a, b) => (b.fromDT + b.toDT).localeCompare(a.fromDT + a.toDT)); }
+  try { rows = (await dbAll()).filter(r => (VIEWER || r.rig === RIG) && !r.deleted).sort((a, b) => (Date.parse(savedIso(b)) || 0) - (Date.parse(savedIso(a)) || 0) || (b.fromDT + b.toDT).localeCompare(a.fromDT + a.toDT)); } // last saved first
   catch (e) { return toast("Could not read saved DPRs.", "err"); }
   list.innerHTML = "";
   if (!rows.length) list.innerHTML = "<p>No saved DPRs yet.</p>";
@@ -225,7 +227,7 @@ async function showHistory() {
     const badge = !r.dirty ? '<span class="badge ok">☁ Saved in cloud</span>'
       : Cloud.signedIn() ? '<span class="badge warn">⏳ Waiting to upload</span>'
         : '<span class="badge local">📱 On this phone only</span>';
-    const when = fmt(String(r.dirty || !r.cloudAt ? new Date(r.savedAt || 0).toISOString() : r.cloudAt).replace(/(\.\d{3})\d+/, "$1")); // server time once uploaded, the phone's time before that
+    const when = fmt(savedIso(r));
     const stamp = r.savedAt || r.cloudAt ? `<br><span class="small">Saved ${esc(when)}${r.by ? " – " + esc(r.by) : ""}</span>` : "";
     item.innerHTML = `<b>${esc(r.dprNo)}</b>${VIEWER ? ` <span class="small">${esc(r.rig)}</span>` : ""}<br>${esc(fmt(r.fromDT))} TO ${esc(fmt(r.toDT))}${stamp}<br>${badge}`;
     const actions = document.createElement("div"); actions.className = "history-actions";
