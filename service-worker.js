@@ -1,6 +1,6 @@
 // Offline shell. Same-origin files are served from cache first and refreshed in the background;
 // Firebase calls (other origins) are never touched here, app.js queues those itself.
-const CACHE = "dpr-app-v1.1.5";
+const CACHE = "dpr-app-v1.1.6";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./cloud.js", "./config.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

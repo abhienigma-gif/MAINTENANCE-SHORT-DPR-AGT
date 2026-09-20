@@ -3,7 +3,7 @@
    Every DPR is stored on the phone first (IndexedDB), then uploaded to the cloud whenever
    the phone is signed in and online. Records carry a `dirty` flag until the upload succeeds. */
 
-const VERSION = "1.1.5";
+const VERSION = "1.1.6";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
 // With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
 // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
@@ -30,7 +30,7 @@ const equipmentGroups = [
 ];
 const hvacGroups = [["Drill PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["Mud PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["DCC", ["HVAC-1", "HVAC-2"]], ["AVPH Panel", ["HVAC-1"]], ["AVPH Dog House", ["HVAC-1"]]];
 const FIELDS = ["dprNo", "fromDT", "toDT", "spudDate", "targetDepth", "currentDepth", "currentOperation", "shutdown", "shutdownReason",
-  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "mechanical", "elecInst", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
+  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "fuelGas", "mechanical", "elecInst", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
 
 let RIG = null;
 let equipmentStatus = {}, hvacStatus = {};
@@ -161,12 +161,36 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 window.addEventListener("pagehide", saveDraft);
 $("app").addEventListener("input", markDirty);
 
+/* Fuel Gas Consumption (MMSCM): a plain number only, integer or decimal (digits and one decimal point) */
+function cleanNumber(v) {
+  v = String(v == null ? "" : v).replace(/,/g, ".").replace(/[^0-9.]/g, ""); // a comma from a phone keypad counts as a decimal point
+  const i = v.indexOf(".");
+  return i < 0 ? v : v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, "");
+}
+// "" if empty, null if it is not a number (for example just "."), otherwise a tidy number string: ".5" -> "0.5", "12." -> "12"
+function normalizeNumber(v) {
+  v = cleanNumber(v).trim();
+  if (v === "") return "";
+  if (!/\d/.test(v)) return null;
+  if (v.startsWith(".")) v = "0" + v;
+  if (v.endsWith(".")) v = v.slice(0, -1);
+  return v;
+}
+$("fuelGas").addEventListener("input", e => {
+  const el = e.target, before = el.value, pos = el.selectionStart, c = cleanNumber(before);
+  if (c !== before) { el.value = c; const p = Math.max(0, pos - (before.length - c.length)); try { el.setSelectionRange(p, p); } catch (x) { /* ignore */ } }
+});
+$("fuelGas").addEventListener("blur", e => { const n = normalizeNumber(e.target.value); if (n !== null) e.target.value = n; });
+
 /* ---------- save / new / open / delete ---------- */
 async function saveDpr() {
   if (VIEWER) return toast("This login is view-only. It cannot save DPRs.", "err");
   const from = $("fromDT").value, to = $("toDT").value;
   if (!from || !to) return toast("Enter both FROM and TO date & time first.", "err");
   if (to < from) return toast("TO date & time is earlier than FROM.", "err");
+  const fg = normalizeNumber($("fuelGas").value);
+  if (fg === null) { $("fuelGas").focus(); return toast("Fuel Gas Consumption (MMSCM) must be a number, for example 0.25", "err"); }
+  $("fuelGas").value = fg;
   updateDprNo();
   const docId = makeDocId(from, to), id = recId(RIG, docId);
   try {
@@ -257,7 +281,7 @@ function reportFull(d) {
     g[1].forEach((n, ii) => lines.push("    " + statusText(n, d.radios["hv_" + gi + "_" + ii])));
   });
   lines.push("", "4. CRITICAL OPERATIONAL PARAMETERS", "");
-  [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA], ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air]].forEach((a, i) => lines.push("  " + String.fromCharCode(65 + i) + ". " + a[0] + ": " + a[1]));
+  [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA], ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air], ["Fuel Gas Consumption (MMSCM)", d.fuelGas || ""]].forEach((a, i) => lines.push("  " + String.fromCharCode(65 + i) + ". " + a[0] + ": " + a[1]));
   const teamText = t => { const l = String(t || "").split(/\r?\n/).map(x => x.trim()); while (l.length && !l[l.length - 1]) l.pop(); return l.length ? l.map(x => (x ? "    " + x : "")) : ["    —"]; };
   lines.push("", "5. MECHANICAL DPR", "", ...teamText(d.mechanical));
   lines.push("", "6. ELEC & INST DPR", "", ...teamText(d.elecInst));
@@ -320,7 +344,7 @@ function reportBrief(d) {
 
   // 4. parameters: one per line, top to bottom, with your own wording and units
   const par = [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA],
-    ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air]]
+    ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air], ["Fuel Gas Consumption (MMSCM)", d.fuelGas]]
     .filter(x => String(x[1] || "").trim());
   if (par.length) L.push("", "4. CRITICAL OPERATIONAL PARAMETERS", ...par.map((x, i) => I1 + letter(i) + ") " + x[0] + ": " + String(x[1]).trim()));
 

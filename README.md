@@ -13,6 +13,8 @@ separate **view-only login** can read all three rigs but cannot save or delete.
   **5 Mechanical DPR** and **6 Elec & Inst DPR** (each is one blank box where that team types its DPR as free text),
   7 Inventory / Requirement, 8 Crew Details. DPRs saved in the older format still open: their maintenance rows and generic
   jobs appear as lines of text in the Mechanical box.
+- **Fuel Gas Consumption (MMSCM)** is the last box in section 4. It accepts only a number (digits and one decimal point, so
+  `12` and `12.5` both work) and shows the phone's numeric keypad. It is included in the WhatsApp text when filled.
 - **Draft protection.** Half-typed entries survive the app being closed or the phone killing it.
 
 ## How rigs and logins work
