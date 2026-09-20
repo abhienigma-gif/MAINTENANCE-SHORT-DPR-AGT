@@ -2,18 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Only people whose (lower-case) email has a document in the `allowedUsers` collection may use DPR cloud save.
-    // Creating a Firebase login alone is not enough, so nobody can join by signing up themselves.
-    function allowedUser() {
-      return request.auth != null
-        && request.auth.token.email != null
-        && exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email));
+    // Every person has one entry in the `allowedUsers` collection: document id = their lower-case email,
+    // field `rig` = "NG-2000-1", "NG-2000-2" or "NG-2000-3" (that rig only), or "ALL" (view-only coordinator).
+    // A Firebase login with no such entry, or with no `rig`, can do nothing.
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+    function profilePath() {
+      return /databases/$(database)/documents/allowedUsers/$(request.auth.token.email);
+    }
+    function myRig() {
+      return get(profilePath()).data.get('rig', '');
+    }
+    function mayRead(rig) {
+      return signedIn() && exists(profilePath()) && (myRig() == rig || myRig() == 'ALL');
+    }
+    function mayWrite(rig) {
+      return signedIn() && exists(profilePath()) && myRig() == rig;   // "ALL" is view-only
     }
 
     match /rigs/{rig}/dprs/{docId} {
-      allow read: if allowedUser();
+      allow read: if mayRead(rig);
 
-      allow create, update: if allowedUser()
+      allow create, update: if mayWrite(rig)
         && rig in ['NG-2000-1', 'NG-2000-2', 'NG-2000-3']
         && request.resource.data.keys().hasOnly(['rig', 'dprNo', 'fromDT', 'toDT', 'payload', 'deleted', 'updatedBy', 'clientSavedAt', 'updatedAt'])
         && request.resource.data.rig == rig
@@ -25,9 +36,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // The allow-list itself can only be edited from the Firebase console.
+    // A person may read only their own entry (the app uses it to learn which rig they belong to).
+    // Nobody can list the collection or change entries from the app: edit them in the Firebase console.
     match /allowedUsers/{email} {
-      allow read, write: if false;
+      allow get: if signedIn() && request.auth.token.email == email;
+      allow list, write: if false;
     }
   }
 }

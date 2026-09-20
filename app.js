@@ -5,6 +5,10 @@
 
 const VERSION = "1.0.0";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
+// With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
+// "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
+const BY_LOGIN = Cloud.configured;
+let VIEWER = false; // true for the "ALL" login: can read every rig, cannot save or delete
 const LEGACY_DBS = ["maintenance-dpr-ng2000-2-v6", "maintenance-dpr-ng2000-1-v6", "maintenance-dpr-ng2000-3-v6"];
 const PAGE = 200;
 
@@ -183,6 +187,7 @@ $("addGeneric").onclick = () => { generic.push(""); renderGeneric(); markDirty()
 
 /* ---------- save / new / open / delete ---------- */
 async function saveDpr() {
+  if (VIEWER) return toast("This login is view-only. It cannot save DPRs.", "err");
   const from = $("fromDT").value, to = $("toDT").value;
   if (!from || !to) return toast("Enter both FROM and TO date & time first.", "err");
   if (to < from) return toast("TO date & time is earlier than FROM.", "err");
@@ -229,7 +234,7 @@ async function showHistory() {
     };
     const delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "Delete"; delBtn.className = "danger";
     delBtn.onclick = () => deleteDpr(r);
-    actions.append(openBtn, delBtn); item.appendChild(actions); list.appendChild(item);
+    actions.append(...(VIEWER ? [openBtn] : [openBtn, delBtn])); item.appendChild(actions); list.appendChild(item);
   });
   $("historyModal").classList.add("show");
 }
@@ -249,7 +254,7 @@ $("historyModal").addEventListener("click", e => { if (e.target === $("historyMo
 /* ---------- WhatsApp / share text ---------- */
 function fmt(v) { if (!v) return ""; const d = new Date(v); if (isNaN(d)) return v; return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function statusText(name, value) { return `${name}: ${value || "—"}`; }
-function report(d) {
+function reportFull(d) {
   const lines = ["MAINTENANCE SHORT DPR", "RIG: " + d.rig, "DPR No.: " + d.dprNo, "DATE & TIME: " + fmt(d.fromDT) + " TO " + fmt(d.toDT), "SPUD DATE: " + d.spudDate, "TARGET DEPTH: " + d.targetDepth, "CURRENT DEPTH: " + d.currentDepth, "CURRENT OPERATION: " + d.currentOperation, "RIG SHUTDOWN STATUS: " + (d.shutdown || "—"), "Reason: " + (d.shutdownReason || "—"), "", "2. CRITICAL EQUIPMENT STATUS", "", "  A. RUNNING:"];
   const buckets = { "RUN": [], "S/B": [], "U/M": [] };
   equipmentGroups.forEach((g, gi) => {
@@ -292,6 +297,69 @@ function report(d) {
   if (nightCrew.length) nightCrew.forEach((x, i) => lines.push("    " + (i + 1) + ". " + x)); else lines.push("    —");
   lines.push("", "END OF DPR"); return lines.join("\n");
 }
+/* Brief version: your section names and order, only U/M equipment listed, empty items left out, subsections lettered
+   A), B), C) and indented, one parameter per line, and a blank line ONLY between sections. */
+function reportBrief(d) {
+  const lines = v => String(v || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const dmy = v => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
+  const I1 = "    ", I2 = "        ";
+  const letter = i => String.fromCharCode(65 + i);
+  const L = ["MAINTENANCE SHORT DPR"];
+  // each block is {title, lines}: "A) title" at the first indent, its lines at the second
+  const render = blocks => blocks.flatMap((b, i) => [I1 + letter(i) + ") " + b.title, ...b.lines.map(x => I2 + x)]);
+  const section = (title, blocks) => { if (blocks.length) L.push("", title, ...render(blocks)); };
+
+  const period = d.fromDT || d.toDT ? fmt(d.fromDT) + " TO " + fmt(d.toDT) : "";
+  [["RIG", d.rig], ["DPR No.", d.dprNo], ["DATE & TIME", period], ["SPUD DATE", dmy(d.spudDate)], ["TARGET DEPTH", d.targetDepth],
+    ["CURRENT DEPTH", d.currentDepth], ["CURRENT OPERATION", d.currentOperation], ["RIG SHUTDOWN STATUS", d.shutdown], ["Reason", d.shutdownReason]]
+    .forEach(x => { const v = String(x[1] || "").trim(); if (v) L.push(x[0] + ": " + v); });
+
+  // 2. equipment: only what is U/M, group by group (RUN and S/B are not listed)
+  const by = { "RUN": [], "S/B": [], "U/M": [] };
+  let ngr = "";
+  equipmentGroups.forEach((g, gi) => {
+    if (g[0] === "NGR") { ngr = d.radios["eq_" + gi + "_0"] || ""; return; }
+    const s = { "RUN": [], "S/B": [], "U/M": [] };
+    g[1].forEach((n, ii) => { const st = d.radios["eq_" + gi + "_" + ii]; if (s[st]) s[st].push(n); });
+    Object.keys(by).forEach(k => { if (s[k].length) by[k].push(g[0] + " – " + s[k].join(", ")); });
+  });
+  const eq = [];
+  if (by["U/M"].length) eq.push({ title: "U/M:", lines: by["U/M"] });
+  if (ngr === "Bypass") eq.push({ title: "NGR STATUS:", lines: ["NGR – Bypass"] }); // NGR has no U/M; it is listed only when bypassed
+  const anyMarked = by["RUN"].length || by["S/B"].length || by["U/M"].length || ngr;
+  if (!eq.length && anyMarked) eq.push({ title: "NO EQUIPMENT IN U/M", lines: [] }); // so a reader can tell it was filled in
+  section("2. CRITICAL EQUIPMENT STATUS", eq);
+
+  // 3. HVAC: only what is not running
+  const hv = [];
+  hvacGroups.forEach((g, gi) => g[1].forEach((n, ii) => hv.push({ name: g[0] + " " + n, st: d.radios["hv_" + gi + "_" + ii] || "" })));
+  const marked = hv.filter(x => x.st), unmarked = hv.length - marked.length;
+  if (marked.length) {
+    const off = marked.filter(x => x.st !== "RUN"), run = marked.filter(x => x.st === "RUN");
+    const hb = off.map(x => ({ title: `${x.name} – ${x.st}`, lines: [] }));
+    if (!off.length && !unmarked) hb.push({ title: "ALL UNITS – RUN", lines: [] });
+    else if (!unmarked) hb.push({ title: "ALL OTHER UNITS – RUN", lines: [] });
+    else if (run.length) hb.push({ title: "RUN: " + run.map(x => x.name).join(", "), lines: [] });
+    section("3. HVAC STATUS", hb);
+  }
+
+  // 4. parameters: one per line, top to bottom, with your own wording and units
+  const par = [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA],
+    ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air]]
+    .filter(x => String(x[1] || "").trim());
+  if (par.length) L.push("", "4. CRITICAL OPERATIONAL PARAMETERS", ...par.map((x, i) => I1 + letter(i) + ") " + x[0] + ": " + String(x[1]).trim()));
+
+  section("5. MAINTENANCE ACTIVITY", (d.maintenance || []).map(r => ({ eq: String(r.eq || "").trim(), job: lines(r.job) })).filter(r => r.eq || r.job.length)
+    .map(r => ({ title: r.eq || "—", lines: r.job })));
+  section("6. GENERIC JOBS CARRIED OUT", (d.generic || []).map(lines).filter(x => x.length).map(x => ({ title: x[0], lines: x.slice(1) })));
+  section("7. INVENTORY / REQUIREMENT", [["URGENT / CRITICAL REQUIREMENT:", d.criticalRequirement], ["MATERIALS RECEIVED FROM BASE:", d.materialsReceived], ["MATERIALS SENT TO BASE:", d.materialsSent]]
+    .filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
+  section("8. CREW DETAILS", [["DAY SHIFT:", d.dayCrew], ["NIGHT SHIFT:", d.nightCrew]].filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
+  L.push("", "END OF DPR");
+  return L.join("\n");
+}
+const report = d => ($("reportFormat").value === "full" ? reportFull(d) : reportBrief(d));
+$("reportFormat").onchange = () => store.set("dpr.format", $("reportFormat").value);
 $("whatsapp").onclick = async () => {
   const text = report(collect());
   try {
@@ -305,16 +373,17 @@ $("whatsapp").onclick = async () => {
 };
 
 /* ---------- cloud sync ---------- */
-let syncing = false, syncError = "", lastSync = Number(store.get("dpr.lastSync") || 0);
+let syncing = false, syncError = "", syncErrorCode = "", lastSync = Number(store.get("dpr.lastSync") || 0);
 const sinceKey = rig => "dpr.since." + rig;
 
 function cloudMessage(e) {
   switch (e && e.code) {
-    case "credentials": return "Wrong email or password.";
+    case "credentials": return "Wrong User ID or password.";
     case "disabled": return "This account has been disabled. Contact your admin.";
     case "throttled": return "Too many attempts. Wait a few minutes and try again.";
     case "network": return "No internet connection.";
-    case "denied": return "Your account is not allowed to use DPR cloud save. Ask your admin to add your email to the allowed users.";
+    case "denied": return "This login is not set up for DPR cloud save. Ask your admin to add your User ID to the allowed users.";
+    case "norig": return "This login has no rig assigned. Ask your admin to add a rig to your entry in allowedUsers.";
     case "unauth": return "Please sign in again.";
     case "server": return "Cloud service is busy. Will retry.";
     case "config": return "Cloud is not configured.";
@@ -334,27 +403,31 @@ async function mergeRemote(rig, d) {
 async function syncNow(manual) {
   if (syncing || !RIG) return;
   if (!Cloud.configured || !Cloud.signedIn()) { updateChip(); return; }
-  syncing = true; syncError = ""; updateChip();
+  syncing = true; syncError = ""; syncErrorCode = ""; updateChip();
   try {
-    // 1. upload everything waiting on this phone
-    for (const r of (await dbAll()).filter(r => r.dirty)) {
+    // 0. which rig is this login for? (this also picks up a change made by the admin)
+    applyProfile((await Cloud.profile()).rig);
+    // 1. upload what is waiting on this phone, for this login's rig only
+    if (!VIEWER) for (const r of (await dbAll()).filter(r => r.dirty && r.rig === RIG)) {
       const at = await Cloud.push(r);
       const cur = await dbGet(r.id);
       if (cur && cur.savedAt === r.savedAt) await dbPut({ ...cur, dirty: 0, cloudAt: at });
     }
-    // 2. download what other phones changed since the last sync
-    let since = store.get(sinceKey(RIG)) || "";
-    for (;;) {
-      const docs = await Cloud.pull(RIG, since, PAGE);
-      for (const d of docs) { await mergeRemote(RIG, d); if (d.updatedAt) since = d.updatedAt; }
-      store.set(sinceKey(RIG), since);
-      if (docs.length < PAGE) break;
+    // 2. download what other phones changed since the last sync (the view-only login downloads every rig)
+    for (const rig of (VIEWER ? RIGS : [RIG])) {
+      let since = store.get(sinceKey(rig)) || "";
+      for (;;) {
+        const docs = await Cloud.pull(rig, since, PAGE);
+        for (const d of docs) { await mergeRemote(rig, d); if (d.updatedAt) since = d.updatedAt; }
+        store.set(sinceKey(rig), since);
+        if (docs.length < PAGE) break;
+      }
     }
     lastSync = Date.now(); store.set("dpr.lastSync", String(lastSync));
     if (manual) toast("Synced with cloud.", "ok");
   } catch (e) {
     if (e && e.code === "unauth") Cloud.signOut();
-    syncError = cloudMessage(e);
+    syncError = cloudMessage(e); syncErrorCode = (e && e.code) || "";
     if (manual || (e && e.code !== "network" && e.code !== "server")) toast(syncError, "err");
   } finally {
     syncing = false; updateChip(); renderCloud();
@@ -374,6 +447,7 @@ async function updateChip() {
   else if (!Cloud.signedIn()) { text = "☁ Sign in"; cls = "warn"; }
   else if (syncing) text = "☁ Syncing…";
   else if (syncError && pending) { text = `⏳ ${pending} to upload`; cls = "warn"; }
+  else if (syncError && syncErrorCode === "network") text = "📴 Offline";
   else if (syncError) { text = "⚠ Sync problem"; cls = "err"; }
   else if (pending) { text = `⏳ ${pending} to upload`; cls = "warn"; }
   else { text = "☁ Synced"; cls = "ok"; }
@@ -387,7 +461,7 @@ function renderCloud(opening) {
   const signed = Cloud.configured && Cloud.signedIn();
   $("loginBox").hidden = !Cloud.configured || signed;
   $("accountBox").hidden = !signed;
-  $("accountEmail").textContent = Cloud.user() || "";
+  $("accountEmail").textContent = (Cloud.user() || "") + (VIEWER ? " (view-only, all rigs)" : RIG && BY_LOGIN ? " · " + RIG : "");
   $("syncBtn").disabled = syncing;
   if (opening) { $("loginErr").hidden = true; $("rigSelect").value = RIG; }
   $("cloudNote").textContent = !Cloud.configured
@@ -403,7 +477,7 @@ function renderCloud(opening) {
 $("loginBtn").onclick = async () => {
   const email = $("loginEmail").value, pw = $("loginPass").value, err = $("loginErr");
   err.hidden = true;
-  if (!email.trim() || !pw) { err.textContent = "Enter your email and password."; err.hidden = false; return; }
+  if (!email.trim() || !pw) { err.textContent = "Enter your User ID and password."; err.hidden = false; return; }
   $("loginBtn").disabled = true;
   try {
     await Cloud.signIn(email, pw);
@@ -431,6 +505,26 @@ $("rigSelect").onchange = () => {
   setRig(next); startRig();
 };
 function setRig(r) { RIG = r; store.set("dpr.rig", r); }
+function setRigSelectVisible(on) { const f = $("rigSelect").parentElement; f.hidden = !on; f.previousElementSibling.hidden = !on; }
+// A person with a rig login cannot choose a rig. Only the view-only login (or a phone with no cloud set up) can.
+function refreshRigUi() {
+  setRigSelectVisible(!BY_LOGIN || VIEWER);
+  $("save").disabled = VIEWER;
+}
+function adoptProfile(prof) {
+  VIEWER = prof === "ALL";
+  store.set("dpr.profile", prof);
+  const last = store.get("dpr.rig");
+  RIG = VIEWER ? (RIGS.includes(last) ? last : RIGS[0]) : prof;
+  store.set("dpr.rig", RIG);
+}
+// Called with the rig read from the cloud. Rebuilds the screen only if it differs from what this phone remembered.
+function applyProfile(prof) {
+  if (prof !== "ALL" && !RIGS.includes(prof)) throw new Cloud.CloudError("norig", "Unknown rig " + prof);
+  if (prof === store.get("dpr.profile") && RIG) { refreshRigUi(); return; }
+  saveDraft(); formDirty = false;
+  adoptProfile(prof); startRig();
+}
 function showRigPicker() {
   const box = $("rigChoices"); box.innerHTML = "";
   RIGS.forEach(r => { const b = document.createElement("button"); b.type = "button"; b.className = "primary"; b.textContent = r; b.onclick = () => { setRig(r); $("rigModal").classList.remove("show"); startRig(); }; box.appendChild(b); });
@@ -439,11 +533,39 @@ function showRigPicker() {
 function startRig() {
   $("rigName").textContent = RIG; $("rig").value = RIG; $("rigSelect").value = RIG;
   document.title = "DPR – " + RIG;
-  const draft = store.get(draftKey());
+  refreshRigUi();
+  const draft = VIEWER ? null : store.get(draftKey());
   let restored = false;
   if (draft) { try { fill(JSON.parse(draft)); formDirty = true; restored = true; } catch (e) { store.del(draftKey()); } }
   if (!restored) { formDirty = false; resetForm(); } else toast("Restored your unsaved DPR.");
   updateChip(); renderCloud(true); syncNow();
+  if (!VIEWER) migrateLegacy(RIG);
+}
+
+/* first launch (or a login the phone does not know yet): sign in, and the login decides the rig */
+$("gateBtn").onclick = async () => {
+  const email = $("gateEmail").value, pw = $("gatePass").value, err = $("gateErr");
+  err.hidden = true;
+  if (!email.trim() || !pw) { err.textContent = "Enter your User ID and password."; err.hidden = false; return; }
+  $("gateBtn").disabled = true;
+  try {
+    await Cloud.signIn(email, pw);
+    const me = await Cloud.profile();
+    if (me.rig !== "ALL" && !RIGS.includes(me.rig)) throw new Cloud.CloudError("norig", "Unknown rig " + me.rig);
+    adoptProfile(me.rig);
+    $("gatePass").value = ""; $("gateModal").classList.remove("show");
+    startRig();
+  } catch (e) {
+    if (Cloud.signedIn()) Cloud.signOut();
+    err.textContent = cloudMessage(e); err.hidden = false;
+  } finally { $("gateBtn").disabled = false; }
+};
+$("gatePass").addEventListener("keydown", e => { if (e.key === "Enter") $("gateBtn").click(); });
+async function beginByLogin() {
+  let prof = store.get("dpr.profile");
+  if (!prof && Cloud.signedIn()) { try { prof = (await Cloud.profile()).rig; } catch (e) { /* ask for sign-in below */ } }
+  if (prof === "ALL" || RIGS.includes(prof)) { adoptProfile(prof); startRig(); }
+  else { store.del("dpr.profile"); updateChip(); renderCloud(true); $("gateModal").classList.add("show"); }
 }
 
 /* ---------- install prompt ---------- */
@@ -458,10 +580,13 @@ $("installNote").textContent = standalone ? "Installed. You are running the app.
 $("appVersion").textContent = VERSION;
 
 /* ---------- one-time import of DPRs saved by the older single-rig apps ---------- */
-async function migrateLegacy() {
-  if (store.get("dpr.migrated") === "1") return;
+const migrating = new Set();
+async function migrateLegacy(rig) {
+  const flag = "dpr.migrated." + rig;
+  if (store.get(flag) === "1" || migrating.has(rig)) return;
+  migrating.add(rig);
   let names = [];
-  try { names = (await indexedDB.databases()).map(d => d.name); } catch (e) { store.set("dpr.migrated", "1"); return; }
+  try { names = (await indexedDB.databases()).map(d => d.name); } catch (e) { store.set(flag, "1"); migrating.delete(rig); return; }
   let imported = 0;
   for (const name of LEGACY_DBS.filter(n => names.includes(n))) {
     try {
@@ -470,7 +595,7 @@ async function migrateLegacy() {
       if (old.objectStoreNames.contains("dprs")) rows = await new Promise(res => { const r = old.transaction("dprs").objectStore("dprs").getAll(); r.onsuccess = () => res(r.result); r.onerror = () => res([]); });
       old.close();
       for (const d of rows.sort((a, b) => (a.id || 0) - (b.id || 0))) {
-        if (!RIGS.includes(d.rig) || !d.fromDT || !d.toDT) continue;
+        if (d.rig !== rig || !d.fromDT || !d.toDT) continue; // the old apps shared one database: take only this login's rig
         const docId = makeDocId(d.fromDT, d.toDT), id = recId(d.rig, docId);
         const { id: legacyId, ...data } = d;
         await dbPut({ id, rig: d.rig, docId, dprNo: d.dprNo || "", fromDT: d.fromDT, toDT: d.toDT, data, savedAt: legacyId || Date.now(), dirty: 1, deleted: false, cloudAt: null });
@@ -478,20 +603,24 @@ async function migrateLegacy() {
       }
     } catch (e) { /* skip unreadable legacy database */ }
   }
-  store.set("dpr.migrated", "1");
-  if (imported) toast(`Imported ${imported} DPR(s) saved by the earlier version.`, "ok");
+  store.set(flag, "1"); migrating.delete(rig);
+  if (imported) { toast(`Imported ${imported} DPR(s) saved by the earlier version.`, "ok"); updateChip(); syncNow(); }
 }
 
 /* ---------- start ---------- */
 (async function init() {
   const p = new URLSearchParams(location.search).get("rig");
-  const fromUrl = p && RIGS.find(r => r === p || r.endsWith("-" + p));
+  const fromUrl = !BY_LOGIN && p && RIGS.find(r => r === p || r.endsWith("-" + p)); // links like ?rig=2 only work on a phone with no cloud set up
   if (fromUrl) store.set("dpr.rig", fromUrl);
-  const saved = store.get("dpr.rig");
-  renderStatus(); renderRows();
-  try { await dbp; await migrateLegacy(); }
+  $("reportFormat").value = store.get("dpr.format") === "full" ? "full" : "brief";
+  renderStatus(); renderRows(); refreshRigUi();
+  try { await dbp; }
   catch (e) { toast("This browser is blocking on-phone storage. DPRs cannot be saved here.", "err"); }
-  if (RIGS.includes(saved) || fromUrl) { RIG = fromUrl || saved; startRig(); }
-  else { updateChip(); renderCloud(true); showRigPicker(); }
+  if (BY_LOGIN) await beginByLogin();
+  else {
+    const saved = store.get("dpr.rig");
+    if (RIGS.includes(saved) || fromUrl) { RIG = fromUrl || saved; startRig(); }
+    else { updateChip(); renderCloud(true); showRigPicker(); }
+  }
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("service-worker.js").catch(() => {});
 })();

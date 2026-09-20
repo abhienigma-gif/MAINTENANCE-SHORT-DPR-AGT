@@ -90,10 +90,13 @@
  <h3>Rig</h3>
  <div class="field"><select id="rigSelect"></select></div>
 
+ <h3>WhatsApp text</h3>
+ <div class="field"><select id="reportFormat"><option value="brief">Brief (recommended)</option><option value="full">Full (every unit listed)</option></select></div>
+
  <h3>Cloud save</h3>
  <p class="small" id="cloudNote"></p>
  <div id="loginBox">
-  <div class="field"><label>Email</label><input id="loginEmail" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
+  <div class="field"><label>User ID</label><input id="loginEmail" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
   <div class="field" style="margin-top:8px"><label>Password</label><input id="loginPass" type="password" autocomplete="current-password"></div>
   <p class="small err" id="loginErr" hidden></p>
   <button type="button" class="primary wide" id="loginBtn">Sign in</button>
@@ -110,7 +113,17 @@
  <p class="small" style="margin-top:14px">Version <span id="appVersion"></span></p>
 </div></div>
 
-<!-- First run: choose rig -->
+<!-- First launch: the login decides the rig -->
+<div class="modal" id="gateModal"><div class="modal-box">
+ <h2>Sign in to start</h2>
+ <p class="small">Use the User ID and password your admin gave you. Your login decides which rig this app is for.</p>
+ <div class="field"><label>User ID</label><input id="gateEmail" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></div>
+ <div class="field" style="margin-top:8px"><label>Password</label><input id="gatePass" type="password" autocomplete="current-password"></div>
+ <p class="small err" id="gateErr" hidden></p>
+ <button type="button" class="primary wide" id="gateBtn">Sign in</button>
+</div></div>
+
+<!-- Only used on a phone with no cloud set up: choose rig -->
 <div class="modal" id="rigModal"><div class="modal-box">
  <h2>Select your rig</h2>
  <p class="small">This is remembered on this phone. You can change it later from the cloud button at the top.</p>

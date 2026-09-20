@@ -9,6 +9,7 @@
   const TOKEN = cfg.tokenBase || "https://securetoken.googleapis.com/v1";
   const FS = cfg.firestoreBase || "https://firestore.googleapis.com/v1";
   const configured = !!(cfg.apiKey && cfg.projectId);
+  const USER_DOMAIN = (cfg.userDomain || "").toLowerCase();
   const SESSION_KEY = "dpr.session";
   const DOCS = `projects/${cfg.projectId}/databases/(default)/documents`;
 
@@ -30,6 +31,7 @@
     if (/TOO_MANY_ATTEMPTS/.test(message)) return "throttled";
     if (status === 401 || apiStatus === "UNAUTHENTICATED") return "unauth";
     if (status === 403 || apiStatus === "PERMISSION_DENIED") return "denied";
+    if (status === 404 || apiStatus === "NOT_FOUND") return "notfound";
     if (status >= 500) return "server";
     return "error";
   }
@@ -46,12 +48,18 @@
     return body;
   }
 
+  // "NG2-01" -> "ng2-01@rigdpr.local". Anything that already has an @ is used as typed (lower-cased).
+  function loginName(id) {
+    const v = String(id || "").trim().toLowerCase();
+    return v.includes("@") || !USER_DOMAIN ? v : v + "@" + USER_DOMAIN;
+  }
+
   async function signIn(email, password) {
     if (!configured) throw new CloudError("config", "Cloud is not configured");
     const b = await call(`${AUTH}/accounts:signInWithPassword?key=${encodeURIComponent(cfg.apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password, returnSecureToken: true })
+      body: JSON.stringify({ email: loginName(email), password, returnSecureToken: true })
     });
     session = { email: b.email, uid: b.localId, refreshToken: b.refreshToken };
     idToken = b.idToken; idExpiry = Date.now() + Number(b.expiresIn) * 1000;
@@ -81,14 +89,15 @@
     }
   }
 
-  async function authedPost(url, body) {
+  // POST when a body is given, otherwise GET. Retries once with a fresh token if the server says it expired.
+  async function authed(url, body) {
     for (let attempt = 0; ; attempt++) {
       const t = await token();
       try {
         return await call(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer " + t },
-          body: JSON.stringify(body)
+          method: body ? "POST" : "GET",
+          headers: { ...(body ? { "Content-Type": "application/json" } : {}), Authorization: "Bearer " + t },
+          body: body ? JSON.stringify(body) : undefined
         });
       } catch (e) {
         if (e.code === "unauth" && attempt === 0) { idToken = null; continue; }
@@ -108,7 +117,7 @@
       updatedBy: s(session && session.email),
       clientSavedAt: { integerValue: String(rec.savedAt || Date.now()) }
     };
-    const res = await authedPost(`${FS}/${DOCS}:commit`, {
+    const res = await authed(`${FS}/${DOCS}:commit`, {
       writes: [{
         update: { name: `${DOCS}/rigs/${rec.rig}/dprs/${rec.docId}`, fields },
         updateTransforms: [{ fieldPath: "updatedAt", setToServerValue: "REQUEST_TIME" }]
@@ -125,7 +134,7 @@
       limit
     };
     if (since) q.where = { fieldFilter: { field: { fieldPath: "updatedAt" }, op: "GREATER_THAN", value: { timestampValue: since } } };
-    const rows = await authedPost(`${FS}/${DOCS}/rigs/${rig}:runQuery`, { structuredQuery: q });
+    const rows = await authed(`${FS}/${DOCS}/rigs/${rig}:runQuery`, { structuredQuery: q });
     return rows.filter(r => r.document).map(r => {
       const f = r.document.fields || {};
       return {
@@ -140,9 +149,26 @@
     });
   }
 
+  // Which rig is this login for? Read from the person's own entry in `allowedUsers`
+  // (the security rules let a person read only that one document). Returns {rig}, where rig is
+  // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
+  async function profile() {
+    if (!session) throw new CloudError("unauth", "Not signed in");
+    let d;
+    try { d = await authed(`${FS}/${DOCS}/allowedUsers/${encodeURIComponent(session.email.toLowerCase())}`); }
+    catch (e) { if (e.code === "notfound") throw new CloudError("denied", "This email is not on the allowed list"); throw e; }
+    const rig = ((d.fields || {}).rig || {}).stringValue || "";
+    if (!rig) throw new CloudError("norig", "No rig is assigned to this login");
+    return { rig };
+  }
+
   window.Cloud = {
-    configured, CloudError, signIn, signOut, push, pull,
+    configured, CloudError, signIn, signOut, push, pull, profile,
     signedIn: () => !!session,
-    user: () => (session && session.email) || null
+    user: () => {   // shown to the person: "ng2-01", not "ng2-01@rigdpr.local"
+      const e = session && session.email;
+      if (!e) return null;
+      return USER_DOMAIN && e.toLowerCase().endsWith("@" + USER_DOMAIN) ? e.slice(0, -(USER_DOMAIN.length + 1)) : e;
+    }
   };
 })();

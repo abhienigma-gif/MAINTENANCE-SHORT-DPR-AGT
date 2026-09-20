@@ -1,72 +1,114 @@
 # Maintenance Short DPR – NG-2000 rigs (mobile app with cloud save)
 
-One installable mobile app for **NG-2000-1, NG-2000-2 and NG-2000-3**. It is the V10/V11 DPR form with the same
-fields, DPR numbering and WhatsApp report text, plus:
+**One app link for NG-2000-1, NG-2000-2 and NG-2000-3.** The DPR form, numbering and section order are the same as the
+V10/V11 app. Each person's **login decides their rig**: a rig login can see and save only its own rig's DPRs, and a
+separate **view-only login** can read all three rigs but cannot save or delete.
 
-- **Installs on the phone** (Android and iPhone) and opens like a normal app. Works with no signal.
-- **Cloud save.** Every saved DPR uploads to your Firebase project when the phone is signed in and online.
-  If there is no signal it waits on the phone and uploads later. DPRs saved from other phones appear in History.
-- **One app, three rigs.** The rig is chosen on first launch (change it from the cloud button at the top).
-  A link ending in `?rig=1`, `?rig=2` or `?rig=3` preselects the rig.
-- **Draft protection.** Half-typed entries are kept if the app is closed or the phone kills it, and restored on reopening.
-- Fixes: the three rig copies used to share one local database name (their histories mixed); the "Share" sheet
-  no longer also copies text when you just close it; From/To are required before saving.
+- **Installs on the phone** (Android and iPhone) and works with no signal. DPRs are saved on the phone first and
+  upload when there is signal.
+- **Brief WhatsApp text by default** (about 30 lines instead of about 120): same section numbers, empty sections
+  left out, one line per equipment status, HVAC lists only what is not running. The full, unit-by-unit text is still
+  available under **Settings → WhatsApp text**.
+- **Draft protection.** Half-typed entries survive the app being closed or the phone killing it.
+
+## How rigs and logins work
+
+Every person has **two** things:
+
+1. a **login** (Firebase Authentication): a plain **User ID** and a password that you create and hand to them, and
+2. an **entry in the `allowedUsers` collection** (Firestore): document id = their login name **in lower case**,
+   with a field **`rig`** set to one of:
+
+| `rig` value | What that login can do |
+|---|---|
+| `NG-2000-1`, `NG-2000-2` or `NG-2000-3` | Read and save **that rig only** |
+| `ALL` | **View-only**: read all three rigs, cannot save or delete |
+| *(missing, or no entry)* | Nothing |
+
+This is enforced by the database rules (`firestore.rules`), not only by the app. Someone who bypasses the app still
+cannot read or write another rig's DPRs.
+
+The app reads the person's own entry after they sign in, so **the rig is never chosen on the phone**. If the admin
+changes someone's `rig`, the phone switches at its next sync.
+
+### User IDs: crew type `ng2-01`, not an email
+Firebase only accepts email-shaped login names, so the app adds `@rigdpr.local` (set as `userDomain` in `config.js`)
+to whatever the person types. The crew never see it, and it cannot be a real inbox. Capitals and stray spaces are
+ignored. In the Firebase console the same login is written as `ng2-01@rigdpr.local`, and that full form is what you
+enter there. Anyone who types a full email address is not changed, so real emails also work.
+
+Suggested names, one login **per person** (do not share a login: each saved DPR records who saved it):
+
+| Person | User ID typed in the app | Name to enter in the Firebase console | `rig` |
+|---|---|---|---|
+| NG-1 people (6) | `ng1-01` … `ng1-06` | `ng1-01@rigdpr.local` … | `NG-2000-1` |
+| NG-2 people (6) | `ng2-01` … `ng2-06` | `ng2-01@rigdpr.local` … | `NG-2000-2` |
+| NG-3 people (6) | `ng3-01` … `ng3-06` | `ng3-01@rigdpr.local` … | `NG-2000-3` |
+| Coordinator (view-only) | `coord` | `coord@rigdpr.local` | `ALL` |
+
+There is no "forgot password" (these are not real inboxes, so the console's emailed reset link cannot reach
+anyone). To give someone a new password: Authentication → Users → delete that user, then **Add user** again with the
+same name (`ng2-01@rigdpr.local`) and the new password. Their `allowedUsers` entry stays as it is, so nothing else
+needs changing, and their DPRs are not affected.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `index.html`, `styles.css`, `app.js` | The app |
-| `cloud.js` | Firebase login + Firestore sync (plain web APIs, no SDK) |
-| `config.js` | **You fill in two values here** (see step 5) |
+| `cloud.js` | Login and cloud sync (Firebase Auth and Firestore over plain web APIs) |
+| `config.js` | Your Firebase `apiKey` and `projectId` (already filled in) |
 | `service-worker.js`, `manifest.json`, icons | Offline use and "install to home screen" |
-| `firestore.rules` | Security rules to paste into Firebase |
+| `firestore.rules` | Security rules, pasted into Firebase → Firestore → Rules |
 
-## One-time cloud setup (about 15 minutes, free Firebase "Spark" plan)
+## Setup (one time)
 
-1. Go to <https://console.firebase.google.com> → **Add project** (Google Analytics not needed).
-2. **Build → Authentication → Get started → Email/Password → Enable.**
-   Then *Settings → User actions* → turn **off** "Enable create (sign-up)" if the option is shown.
-3. **Build → Firestore Database → Create database** → production mode → pick a region near you (e.g. `asia-south1`, Mumbai).
-4. Firestore **Rules** tab → replace everything with the contents of `firestore.rules` → **Publish**.
-5. **Project settings (gear) → General → Your apps → Web `</>`** → register an app → copy `apiKey` and `projectId`
-   into `config.js`.
-6. **Add each person who may use the app** (two clicks each):
-   - Authentication → Users → **Add user** (email + password).
-   - Firestore → **Start collection** `allowedUsers` → *Document ID* = that email **in lower case** → add any field
-     (e.g. `active` = `true`) → Save. Without this document the person can sign in but cannot read or save DPRs.
-7. **Host the folder over HTTPS** (phones will not install or run offline apps from plain files).
-   Easiest, since you already use GitHub: put these files in a repository → *Settings → Pages* → deploy from the main branch.
-   Firebase Hosting or any HTTPS web server also works.
+1. **Firebase project** with Email/Password login and a Firestore database in `asia-south1` (Mumbai). *(done)*
+2. **Rules:** Firestore → **Rules** tab → replace everything with `firestore.rules` → **Publish**.
+   *(Republish after this update. The rules changed from "any approved user" to "by rig".)*
+3. **`config.js`** holds `apiKey` and `projectId` from Project settings → Your apps → Web app. *(done)*
+4. **Add each person:**
+   - Authentication → Users → **Add user**. In the "Email" box type the console name from the table above (for
+     example `ng2-01@rigdpr.local`), then the password you choose. Tell the person their **User ID (`ng2-01`)**
+     and password.
+   - Firestore → `allowedUsers` → **Add document** → Document ID = the same console name in lower case
+     (`ng2-01@rigdpr.local`) → field `rig` (string) = `NG-2000-1` / `NG-2000-2` / `NG-2000-3` / `ALL`.
+   - Existing entries (from before this update) need the `rig` field added, or those people can do nothing.
+5. **Host the folder over HTTPS** (phones will not install or run offline apps from plain files). GitHub Pages:
+   put the files in a repository → Settings → Pages → deploy from the `main` branch.
+   If you host under the same GitHub account as the older DPR apps, DPRs saved on phones by those apps are imported
+   automatically (only the signed-in rig's DPRs).
+6. **On each phone:** open the link. **Android (Chrome):** menu → *Install app*. **iPhone (Safari):** Share →
+   *Add to Home Screen*. Open the app and sign in once. After that the phone remembers its rig and works offline.
 
-### On each phone
-- Open the link. **Android (Chrome):** menu → *Install app*. **iPhone (Safari):** Share → *Add to Home Screen*.
-- Choose the rig, tap the cloud button at the top → sign in. It shows **☁ Synced** when everything is uploaded.
+### Test the rules in Firebase (recommended before the crew starts)
+Firestore → **Rules** → **Rules Playground** (Develop & Test). Simulate **get** on
+`/databases/(default)/documents/rigs/NG-2000-2/dprs/test` **authenticated**, provider `password`, with the email set
+in the token. Expected results, given an `allowedUsers` entry with `rig` = `NG-2000-2` for `rig2@example.com`:
 
-### Check it works
-Save a DPR, then look in the Firebase console → Firestore → `rigs` → `NG-2000-x` → `dprs`. Your DPR should be there.
+| Simulated request | Email | Expected |
+|---|---|---|
+| get `rigs/NG-2000-2/dprs/test` | rig2@example.com | **Allowed** |
+| get `rigs/NG-2000-1/dprs/test` | rig2@example.com | **Denied** |
+| create `rigs/NG-2000-1/dprs/test` | rig2@example.com | **Denied** |
+| get `rigs/NG-2000-1/dprs/test` | (a `rig: ALL` login) | **Allowed** |
+| create `rigs/NG-2000-2/dprs/test` | (a `rig: ALL` login) | **Denied** |
+| get `allowedUsers/other@example.com` | rig2@example.com | **Denied** (only your own entry is readable) |
 
 ## How saving works
 
-- **Save** always stores on the phone first, then uploads. The header button shows the state:
-  `☁ Synced`, `⏳ 2 to upload`, `☁ Sign in`, or `📱 This phone only` (cloud not configured).
+- **Save** stores on the phone first, then uploads. The top-right button shows the state: `☁ Synced`,
+  `⏳ 2 to upload`, `📴 Offline`, `☁ Sign in`, or `📱 Phone only` (cloud not configured).
 - Each DPR is one record per rig and time period (`FROM` + `TO`). Saving the same period again updates it.
-- **Delete** removes it from the phone and marks it deleted in the cloud, so it disappears on other phones too
-  (the record is kept in Firestore, flagged `deleted`).
-- **Conflicts:** if two phones edit the *same* DPR while apart, the phone that saves last wins. Plan for one
-  person to own each shift's DPR.
-- Existing DPRs saved by the older apps in the same browser are imported once, automatically, and upload after sign-in.
-- Data is kept in Firestore under `rigs/{rig}/dprs/{period}`; the full form is in the `payload` field as JSON.
+- Any approved login for the rig sees the same DPRs after syncing, whichever phone saved them.
+- **Delete** removes it from the phone and marks it deleted in the cloud so it disappears on other phones too.
+- **Conflicts:** if two people edit the *same* DPR while apart, the last save wins.
+- On a shared phone, signing out keeps the previous person's DPRs on the phone. Signing in as someone from another
+  rig switches the app to that rig and does not show or upload the other rig's DPRs.
 
 ## Updating the app
-Replace the files on the host. Phones pick up the new version the second time the app is opened
-(the first open shows the old copy while the new one downloads). To force it, change `CACHE` in `service-worker.js`.
+Replace the files on the host. Phones pick up the new version the second time the app is opened.
 
 ## Optional hardening
 In Google Cloud Console → *APIs & Services → Credentials*, restrict the Firebase API key to your hosting domain
-(HTTP referrers) and to the Identity Toolkit and Firestore APIs. The key is an identifier, not a password;
-access is controlled by the login and `firestore.rules`.
-
-## Later: Android APK
-The app can be wrapped with Capacitor to produce an APK if you need one for distribution outside a link. That needs
-Android Studio and is not required for anything above.
+(HTTP referrers) and to the Identity Toolkit and Firestore APIs. The key is an identifier, not a password.
