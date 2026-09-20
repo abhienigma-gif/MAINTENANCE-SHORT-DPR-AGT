@@ -3,7 +3,7 @@
    Every DPR is stored on the phone first (IndexedDB), then uploaded to the cloud whenever
    the phone is signed in and online. Records carry a `dirty` flag until the upload succeeds. */
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.5";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
 // With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
 // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
@@ -30,10 +30,10 @@ const equipmentGroups = [
 ];
 const hvacGroups = [["Drill PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["Mud PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["DCC", ["HVAC-1", "HVAC-2"]], ["AVPH Panel", ["HVAC-1"]], ["AVPH Dog House", ["HVAC-1"]]];
 const FIELDS = ["dprNo", "fromDT", "toDT", "spudDate", "targetDepth", "currentDepth", "currentOperation", "shutdown", "shutdownReason",
-  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
+  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "mechanical", "elecInst", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
 
 let RIG = null;
-let maintenance = [], generic = [], equipmentStatus = {}, hvacStatus = {};
+let equipmentStatus = {}, hvacStatus = {};
 let formDirty = false, draftTimer = null;
 
 /* ---------- toast ---------- */
@@ -125,24 +125,32 @@ function updateDprNo() { $("dprNo").value = makeDprNo(dprDateKey()); }
 
 /* ---------- form state ---------- */
 function collect() {
-  const d = { rig: RIG, radios: { ...equipmentStatus, ...hvacStatus }, maintenance: maintenance.map(r => ({ ...r })), generic: [...generic] };
+  const d = { rig: RIG, radios: { ...equipmentStatus, ...hvacStatus } };
   FIELDS.forEach(id => { d[id] = $(id).value; });
   return d;
+}
+// Sections 5 and 6 are free text. DPRs saved in earlier formats are converted when opened: rows of equipment + job become
+// lines "equipment: job", and the old "generic jobs" are added as lines under Mechanical, so nothing is lost.
+function sectionTexts(d) {
+  const rows = a => (a || []).map(r => (r.eq ? r.eq + ": " : "") + (r.job || "")).filter(x => x.trim()).join("\n");
+  if (typeof d.mechanical === "string" || typeof d.elecInst === "string") return [d.mechanical || "", d.elecInst || ""];
+  if (Array.isArray(d.mechanical) || Array.isArray(d.elecInst)) return [rows(d.mechanical), rows(d.elecInst)];
+  return [[rows(d.maintenance), ...(d.generic || []).filter(x => String(x || "").trim())].filter(Boolean).join("\n"), ""];
 }
 function fill(d) {
   FIELDS.forEach(id => { $(id).value = d[id] == null ? "" : d[id]; });
   $("rig").value = RIG;
-  maintenance = (d.maintenance || []).map(r => ({ eq: r.eq || "", issue: r.issue || "", job: r.job || "", spare: r.spare || "" }));
-  generic = [...(d.generic || [])];
+  const [mech, ei] = sectionTexts(d);
+  $("mechanical").value = mech; $("elecInst").value = ei;
   equipmentStatus = {}; hvacStatus = {};
   Object.entries(d.radios || {}).forEach(([k, v]) => { if (k.startsWith("eq_")) equipmentStatus[k] = v; else if (k.startsWith("hv_")) hvacStatus[k] = v; });
-  renderStatus(); renderRows();
+  renderStatus();
 }
 function resetForm() {
   FIELDS.forEach(id => { $(id).value = ""; });
   $("rig").value = RIG; setDefaultDates(); updateDprNo();
-  equipmentStatus = {}; hvacStatus = {}; maintenance = []; generic = [];
-  renderStatus(); renderRows();
+  equipmentStatus = {}; hvacStatus = {};
+  renderStatus();
 }
 
 const draftKey = () => "dpr.draft." + RIG;
@@ -152,38 +160,6 @@ function clearDirty() { formDirty = false; clearTimeout(draftTimer); if (RIG) st
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveDraft(); else syncNow(); });
 window.addEventListener("pagehide", saveDraft);
 $("app").addEventListener("input", markDirty);
-
-/* ---------- maintenance + generic rows ---------- */
-function renderMaintenance() {
-  const el = $("maintenanceRows"); el.innerHTML = "";
-  if (!maintenance.length) maintenance.push({ eq: "", issue: "", job: "", spare: "" });
-  const table = document.createElement("table"); table.className = "maintenance-table";
-  table.innerHTML = `<thead><tr><th>Sl. No.</th><th>Equipment Name</th><th>Jobs Carried Out</th><th>Action</th></tr></thead><tbody></tbody>`;
-  const tbody = table.querySelector("tbody");
-  maintenance.forEach((r, i) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td data-label="Sl. No."><b>${i + 1}</b></td><td data-label="Equipment Name"><input class="m-eq" value="${esc(r.eq)}" placeholder="Equipment name"></td><td data-label="Jobs Carried Out"><textarea class="m-job" placeholder="Enter detailed maintenance activity / jobs carried out">${esc(r.job)}</textarea></td><td data-label="Action">${maintenance.length > 1 ? '<button class="danger" type="button">Remove</button>' : "—"}</td>`;
-    tr.querySelector(".m-eq").addEventListener("input", e => { r.eq = e.target.value; });
-    tr.querySelector(".m-job").addEventListener("input", e => { r.job = e.target.value; });
-    const rm = tr.querySelector(".danger"); if (rm) rm.onclick = () => { maintenance.splice(i, 1); renderMaintenance(); markDirty(); };
-    tbody.appendChild(tr);
-  });
-  el.appendChild(table);
-}
-function renderGeneric() {
-  const el = $("genericRows"); el.innerHTML = "";
-  if (!generic.length) generic.push("");
-  generic.forEach((v, i) => {
-    const d = document.createElement("div"); d.className = "row";
-    d.innerHTML = `<div class="rowhead"><b>Sr. No. ${i + 1}</b>${generic.length > 1 ? '<button class="danger" type="button">Remove</button>' : ""}</div><textarea>${esc(v)}</textarea>`;
-    d.querySelector("textarea").oninput = e => { generic[i] = e.target.value; };
-    const b = d.querySelector("button"); if (b) b.onclick = () => { generic.splice(i, 1); renderGeneric(); markDirty(); };
-    el.appendChild(d);
-  });
-}
-function renderRows() { renderMaintenance(); renderGeneric(); }
-$("addMaintenance").onclick = () => { maintenance.push({ eq: "", issue: "", job: "", spare: "" }); renderMaintenance(); markDirty(); };
-$("addGeneric").onclick = () => { generic.push(""); renderGeneric(); markDirty(); };
 
 /* ---------- save / new / open / delete ---------- */
 async function saveDpr() {
@@ -282,10 +258,9 @@ function reportFull(d) {
   });
   lines.push("", "4. CRITICAL OPERATIONAL PARAMETERS", "");
   [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA], ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air]].forEach((a, i) => lines.push("  " + String.fromCharCode(65 + i) + ". " + a[0] + ": " + a[1]));
-  lines.push("", "5. MAINTENANCE ACTIVITY", "");
-  d.maintenance.forEach((r, i) => { lines.push("  " + String.fromCharCode(65 + i) + ". " + (r.eq || "—"), "", "    " + (r.job || "—")); if (i < d.maintenance.length - 1) lines.push(""); });
-  lines.push("", "6. GENERIC JOBS CARRIED OUT", "");
-  d.generic.forEach((x, i) => { lines.push("  " + String.fromCharCode(65 + i) + ". " + x); if (i < d.generic.length - 1) lines.push(""); });
+  const teamText = t => { const l = String(t || "").split(/\r?\n/).map(x => x.trim()); while (l.length && !l[l.length - 1]) l.pop(); return l.length ? l.map(x => (x ? "    " + x : "")) : ["    —"]; };
+  lines.push("", "5. MECHANICAL DPR", "", ...teamText(d.mechanical));
+  lines.push("", "6. ELEC & INST DPR", "", ...teamText(d.elecInst));
   lines.push("", "7. INVENTORY / REQUIREMENT", "", "  A. URGENT / CRITICAL REQUIREMENT:", "    " + (d.criticalRequirement || "—"), "", "  B. MATERIALS RECEIVED FROM BASE:", "    " + (d.materialsReceived || "—"), "", "  C. MATERIALS SENT TO BASE:", "    " + (d.materialsSent || "—"));
   lines.push("", "8. CREW DETAILS", "");
   const crewList = v => String(v || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
@@ -349,9 +324,9 @@ function reportBrief(d) {
     .filter(x => String(x[1] || "").trim());
   if (par.length) L.push("", "4. CRITICAL OPERATIONAL PARAMETERS", ...par.map((x, i) => I1 + letter(i) + ") " + x[0] + ": " + String(x[1]).trim()));
 
-  section("5. MAINTENANCE ACTIVITY", (d.maintenance || []).map(r => ({ eq: String(r.eq || "").trim(), job: lines(r.job) })).filter(r => r.eq || r.job.length)
-    .map(r => ({ title: r.eq || "—", lines: r.job })));
-  section("6. GENERIC JOBS CARRIED OUT", (d.generic || []).map(lines).filter(x => x.length).map(x => ({ title: x[0], lines: x.slice(1) })));
+  const teamSection = (title, t) => { const b = lines(t).map(x => I1 + x); if (b.length) L.push("", title, ...b); };
+  teamSection("5. MECHANICAL DPR", d.mechanical);
+  teamSection("6. ELEC & INST DPR", d.elecInst);
   section("7. INVENTORY / REQUIREMENT", [["URGENT / CRITICAL REQUIREMENT:", d.criticalRequirement], ["MATERIALS RECEIVED FROM BASE:", d.materialsReceived], ["MATERIALS SENT TO BASE:", d.materialsSent]]
     .filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
   section("8. CREW DETAILS", [["DAY SHIFT:", d.dayCrew], ["NIGHT SHIFT:", d.nightCrew]].filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
@@ -613,7 +588,7 @@ async function migrateLegacy(rig) {
   const fromUrl = !BY_LOGIN && p && RIGS.find(r => r === p || r.endsWith("-" + p)); // links like ?rig=2 only work on a phone with no cloud set up
   if (fromUrl) store.set("dpr.rig", fromUrl);
   $("reportFormat").value = store.get("dpr.format") === "full" ? "full" : "brief";
-  renderStatus(); renderRows(); refreshRigUi();
+  renderStatus(); refreshRigUi();
   try { await dbp; }
   catch (e) { toast("This browser is blocking on-phone storage. DPRs cannot be saved here.", "err"); }
   if (BY_LOGIN) await beginByLogin();

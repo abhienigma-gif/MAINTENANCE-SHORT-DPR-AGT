@@ -9,6 +9,10 @@ separate **view-only login** can read all three rigs but cannot save or delete.
 - **Brief WhatsApp text by default** (about 30 lines instead of about 120): same section numbers, empty sections
   left out, one line per equipment status, HVAC lists only what is not running. The full, unit-by-unit text is still
   available under **Settings → WhatsApp text**.
+- **Form sections:** 1 DPR Control / Rig Details, 2 Critical Equipment Status, 3 HVAC Status, 4 Critical Operational Parameters,
+  **5 Mechanical DPR** and **6 Elec & Inst DPR** (each is one blank box where that team types its DPR as free text),
+  7 Inventory / Requirement, 8 Crew Details. DPRs saved in the older format still open: their maintenance rows and generic
+  jobs appear as lines of text in the Mechanical box.
 - **Draft protection.** Half-typed entries survive the app being closed or the phone killing it.
 
 ## How rigs and logins work
