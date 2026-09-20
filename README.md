@@ -15,6 +15,11 @@ separate **view-only login** can read all three rigs but cannot save or delete.
   jobs appear as lines of text in the Mechanical box.
 - **Fuel Gas Consumption (MMSCM)** is the last box in section 4. It accepts only a number (digits and one decimal point, so
   `12` and `12.5` both work) and shows the phone's numeric keypad. It is included in the WhatsApp text when filled.
+- **History shows who saved last:** each DPR lists `Saved 21/09/2026 00:36 – kalyan` (the User ID, and the time from
+  Firebase's clock once uploaded). Only the most recent save is recorded. In Firebase the same information is the `updatedBy`
+  and `updatedAt` fields of the DPR.
+- **View-only logins** see the DPRs of all three rigs together in History (each labelled with its rig), can open any of them
+  and share the WhatsApp text, and have no Save or Delete.
 - **Draft protection.** Half-typed entries survive the app being closed or the phone killing it.
 
 ## How rigs and logins work

@@ -144,7 +144,8 @@
         toDT: (f.toDT || {}).stringValue || "",
         payload: (f.payload || {}).stringValue || "",
         deleted: !!(f.deleted || {}).booleanValue,
-        updatedAt: (f.updatedAt || {}).timestampValue || ""
+        updatedAt: (f.updatedAt || {}).timestampValue || "",
+        updatedBy: (f.updatedBy || {}).stringValue || ""
       };
     });
   }
@@ -165,10 +166,11 @@
   window.Cloud = {
     configured, CloudError, signIn, signOut, push, pull, profile,
     signedIn: () => !!session,
-    user: () => {   // shown to the person: "ng2-01", not "ng2-01@rigdpr.local"
-      const e = session && session.email;
-      if (!e) return null;
+    // shown to people: "ng2-01", not "ng2-01@rigdpr.local"
+    shortName: e => {
+      e = String(e || "");
       return USER_DOMAIN && e.toLowerCase().endsWith("@" + USER_DOMAIN) ? e.slice(0, -(USER_DOMAIN.length + 1)) : e;
-    }
+    },
+    user: () => (session && session.email ? window.Cloud.shortName(session.email) : null)
   };
 })();

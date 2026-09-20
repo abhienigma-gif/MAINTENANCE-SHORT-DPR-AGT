@@ -3,7 +3,7 @@
    Every DPR is stored on the phone first (IndexedDB), then uploaded to the cloud whenever
    the phone is signed in and online. Records carry a `dirty` flag until the upload succeeds. */
 
-const VERSION = "1.1.6";
+const VERSION = "1.1.8";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
 // With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
 // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
@@ -195,7 +195,7 @@ async function saveDpr() {
   const docId = makeDocId(from, to), id = recId(RIG, docId);
   try {
     const existing = await dbGet(id);
-    await dbPut({ id, rig: RIG, docId, dprNo: $("dprNo").value, fromDT: from, toDT: to, data: collect(), savedAt: Date.now(), dirty: 1, deleted: false, cloudAt: existing ? existing.cloudAt : null });
+    await dbPut({ id, rig: RIG, docId, dprNo: $("dprNo").value, fromDT: from, toDT: to, data: collect(), savedAt: Date.now(), dirty: 1, deleted: false, cloudAt: existing ? existing.cloudAt : null, by: Cloud.user() || "" });
     clearDirty();
     const revived = existing && !existing.deleted;
     toast((revived ? "DPR updated: " : "DPR saved: ") + $("dprNo").value + (Cloud.signedIn() ? "" : " (on this phone)"), "ok");
@@ -214,9 +214,9 @@ $("fromDT").addEventListener("change", updateDprNo);
 $("toDT").addEventListener("change", updateDprNo);
 
 async function showHistory() {
-  const list = $("historyList"); $("historyRig").textContent = "• " + RIG;
+  const list = $("historyList"); $("historyRig").textContent = VIEWER ? "• all rigs" : "• " + RIG; // a view-only login sees every rig together
   let rows;
-  try { rows = (await dbAll()).filter(r => r.rig === RIG && !r.deleted).sort((a, b) => (b.fromDT + b.toDT).localeCompare(a.fromDT + a.toDT)); }
+  try { rows = (await dbAll()).filter(r => (VIEWER || r.rig === RIG) && !r.deleted).sort((a, b) => (b.fromDT + b.toDT).localeCompare(a.fromDT + a.toDT)); }
   catch (e) { return toast("Could not read saved DPRs.", "err"); }
   list.innerHTML = "";
   if (!rows.length) list.innerHTML = "<p>No saved DPRs yet.</p>";
@@ -225,12 +225,18 @@ async function showHistory() {
     const badge = !r.dirty ? '<span class="badge ok">☁ Saved in cloud</span>'
       : Cloud.signedIn() ? '<span class="badge warn">⏳ Waiting to upload</span>'
         : '<span class="badge local">📱 On this phone only</span>';
-    item.innerHTML = `<b>${esc(r.dprNo)}</b><br>${esc(fmt(r.fromDT))} TO ${esc(fmt(r.toDT))}<br>${badge}`;
+    const when = fmt(String(r.dirty || !r.cloudAt ? new Date(r.savedAt || 0).toISOString() : r.cloudAt).replace(/(\.\d{3})\d+/, "$1")); // server time once uploaded, the phone's time before that
+    const stamp = r.savedAt || r.cloudAt ? `<br><span class="small">Saved ${esc(when)}${r.by ? " – " + esc(r.by) : ""}</span>` : "";
+    item.innerHTML = `<b>${esc(r.dprNo)}</b>${VIEWER ? ` <span class="small">${esc(r.rig)}</span>` : ""}<br>${esc(fmt(r.fromDT))} TO ${esc(fmt(r.toDT))}${stamp}<br>${badge}`;
     const actions = document.createElement("div"); actions.className = "history-actions";
     const openBtn = document.createElement("button"); openBtn.type = "button"; openBtn.textContent = "Open"; openBtn.className = "primary";
     openBtn.onclick = () => {
       if (formDirty && !confirm("Open this DPR? Changes you have not saved will be lost.")) return;
-      clearDirty(); fill({ ...r.data, dprNo: r.dprNo }); $("historyModal").classList.remove("show");
+      clearDirty();
+      if (r.rig !== RIG) { // a view-only login opening another rig's DPR: show that rig's name on the form and in the report
+        setRig(r.rig); $("rigName").textContent = RIG; $("rigSelect").value = RIG; document.title = "DPR – " + RIG;
+      }
+      fill({ ...r.data, dprNo: r.dprNo }); $("historyModal").classList.remove("show");
     };
     const delBtn = document.createElement("button"); delBtn.type = "button"; delBtn.textContent = "Delete"; delBtn.className = "danger";
     delBtn.onclick = () => deleteDpr(r);
@@ -396,7 +402,7 @@ async function mergeRemote(rig, d) {
   if (local && local.dirty) return; // a newer local edit is waiting to upload; it will replace the cloud copy
   let data;
   try { data = JSON.parse(d.payload); } catch (e) { return; }
-  await dbPut({ id, rig, docId: d.docId, dprNo: d.dprNo, fromDT: d.fromDT, toDT: d.toDT, data, savedAt: Date.now(), dirty: 0, deleted: d.deleted, cloudAt: d.updatedAt });
+  await dbPut({ id, rig, docId: d.docId, dprNo: d.dprNo, fromDT: d.fromDT, toDT: d.toDT, data, savedAt: Date.now(), dirty: 0, deleted: d.deleted, cloudAt: d.updatedAt, by: Cloud.shortName(d.updatedBy) });
 }
 
 async function syncNow(manual) {
@@ -410,7 +416,7 @@ async function syncNow(manual) {
     if (!VIEWER) for (const r of (await dbAll()).filter(r => r.dirty && r.rig === RIG)) {
       const at = await Cloud.push(r);
       const cur = await dbGet(r.id);
-      if (cur && cur.savedAt === r.savedAt) await dbPut({ ...cur, dirty: 0, cloudAt: at });
+      if (cur && cur.savedAt === r.savedAt) await dbPut({ ...cur, dirty: 0, cloudAt: at, by: Cloud.user() || cur.by });
     }
     // 2. download what other phones changed since the last sync (the view-only login downloads every rig)
     for (const rig of (VIEWER ? RIGS : [RIG])) {
