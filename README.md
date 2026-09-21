@@ -9,10 +9,10 @@ separate **view-only login** can read all three rigs but cannot save or delete.
 - **Brief WhatsApp text by default** (about 30 lines instead of about 120): same section numbers, empty sections
   left out, one line per equipment status, HVAC lists only what is not running. The full, unit-by-unit text is still
   available under **Settings → WhatsApp text**.
-- **Form sections:** 1 DPR Control / Rig Details, 2 Critical Equipment Status, 3 HVAC Status, 4 Critical Operational Parameters,
-  **5 Mechanical DPR** and **6 Elec & Inst DPR** (each is one blank box where that team types its DPR as free text),
-  7 Inventory / Requirement, 8 Crew Details. DPRs saved in the older format still open: their maintenance rows and generic
-  jobs appear as lines of text in the Mechanical box.
+- **Form sections:** 1 DPR Control / Rig Details, 2 Critical Equipment Status, **3 Agitators Under Maintenance** (one blank box where
+  the Mechanical team lists them), 4 HVAC Status, 5 Critical Operational Parameters, **6 Mechanical DPR** and **7 Elec & Inst DPR**
+  (each one blank box where that team types its DPR as free text), 8 Inventory / Requirement, 9 Crew Details. DPRs saved in
+  earlier formats still open: their old maintenance rows and generic jobs appear as lines of text in the Mechanical box.
 - **Fuel Gas Consumption (MMSCM)** is the last box in section 4. It accepts only a number (digits and one decimal point, so
   `12` and `12.5` both work) and shows the phone's numeric keypad. It is included in the WhatsApp text when filled.
 - **History is ordered by last saved**, with the most recently saved DPR at the top (opening a DPR without saving does not move it).

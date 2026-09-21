@@ -17,6 +17,7 @@ label{font-size:12px;font-weight:700;color:#50606d}
 input,textarea,select{font:inherit;width:100%;border:1px solid #b9c6d0;border-radius:8px;padding:9px;background:#fff;color:#17212b}
 textarea{min-height:62px;resize:vertical}
 textarea.dprtext{min-height:220px}
+textarea.dprtext.short{min-height:130px}
 .readonly{background:#f3f6f8}
 .status-group{display:grid;grid-template-columns:1fr auto;gap:7px 10px;align-items:center;border-bottom:1px solid #edf0f2;padding:7px 0}
 .status-name{font-weight:600;font-size:13px}.choices{display:flex;gap:4px;flex-wrap:wrap}

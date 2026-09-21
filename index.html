@@ -40,9 +40,13 @@
 </section>
 
 <section class="card"><h2>2. CRITICAL EQUIPMENT STATUS</h2><div id="equipment"></div></section>
-<section class="card"><h2>3. HVAC STATUS</h2><div id="hvac"></div></section>
+<section class="card"><h2>3. AGITATORS UNDER MAINTENANCE</h2>
+<div class="field"><textarea id="agitators" class="dprtext short" placeholder="Mechanical team: list the agitators that are under maintenance"></textarea></div>
+</section>
 
-<section class="card"><h2>4. CRITICAL OPERATIONAL PARAMETERS</h2><div class="grid">
+<section class="card"><h2>4. HVAC STATUS</h2><div id="hvac"></div></section>
+
+<section class="card"><h2>5. CRITICAL OPERATIONAL PARAMETERS</h2><div class="grid">
 <div class="field"><label>Total Energy Generated (MWHr)</label><input id="energy" inputmode="decimal"></div>
 <div class="field"><label>Total HSD Consumed – Power Pack (KL)</label><input id="hsdPP" inputmode="decimal"></div>
 <div class="field"><label>Total HSD Issued – DSA Genset (KL)</label><input id="hsdDSA" inputmode="decimal"></div>
@@ -53,21 +57,21 @@
 <div class="field"><label>Fuel Gas Consumption (MMSCM)</label><input id="fuelGas" type="text" inputmode="decimal" pattern="[0-9]*[.]?[0-9]*" autocomplete="off" placeholder="e.g. 0.25"></div>
 </div></section>
 
-<section class="card"><h2>5. MECHANICAL DPR</h2>
+<section class="card"><h2>6. MECHANICAL DPR</h2>
 <div class="field"><textarea id="mechanical" class="dprtext" placeholder="Mechanical team: write the mechanical DPR here"></textarea></div>
 </section>
 
-<section class="card"><h2>6. ELEC &amp; INST DPR</h2>
+<section class="card"><h2>7. ELEC &amp; INST DPR</h2>
 <div class="field"><textarea id="elecInst" class="dprtext" placeholder="Elec &amp; Inst team: write the DPR here"></textarea></div>
 </section>
 
-<section class="card"><h2>7. INVENTORY / REQUIREMENT</h2>
+<section class="card"><h2>8. INVENTORY / REQUIREMENT</h2>
 <div class="field"><label>URGENT / CRITICAL REQUIREMENT</label><textarea id="criticalRequirement" placeholder="Enter Sr. No. and requirement as required by the team"></textarea></div>
 <div class="field" style="margin-top:10px"><label>MATERIALS RECEIVED FROM BASE</label><textarea id="materialsReceived" placeholder="Enter Sr. No. and materials received as required by the team"></textarea></div>
 <div class="field" style="margin-top:10px"><label>MATERIALS SENT TO BASE</label><textarea id="materialsSent" placeholder="Enter Sr. No. and materials sent as required by the team"></textarea></div>
 </section>
 
-<section class="card"><h2>8. CREW DETAILS</h2><div class="grid">
+<section class="card"><h2>9. CREW DETAILS</h2><div class="grid">
 <div class="field"><label>DAY SHIFT</label><textarea id="dayCrew"></textarea></div>
 <div class="field"><label>NIGHT SHIFT</label><textarea id="nightCrew"></textarea></div>
 </div></section>

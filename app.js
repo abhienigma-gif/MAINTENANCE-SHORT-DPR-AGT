@@ -3,7 +3,7 @@
    Every DPR is stored on the phone first (IndexedDB), then uploaded to the cloud whenever
    the phone is signed in and online. Records carry a `dirty` flag until the upload succeeds. */
 
-const VERSION = "1.1.9";
+const VERSION = "1.1.11";
 const RIGS = ["NG-2000-1", "NG-2000-2", "NG-2000-3"];
 // With cloud save on, the rig comes from the person's login (their entry in `allowedUsers`):
 // "NG-2000-1" / "NG-2000-2" / "NG-2000-3", or "ALL" for the view-only coordinator login.
@@ -21,7 +21,7 @@ const store = {
 };
 
 const equipmentGroups = [
-  ["Power Pack", ["PP-1", "PP-2", "PP-3", "PP-4"]], ["Mud Pump", ["MP-1", "MP-2", "MP-3"]],
+  ["Power Pack", ["PP-1", "PP-2", "PP-3", "PP-4", "EDG"]], ["Mud Pump", ["MP-1", "MP-2", "MP-3"]],
   ["DrawWorks", ["DW", "DWM-A", "DWM-B"]], ["Travelling Block", ["TB"]], ["Crown Block", ["CB"]],
   ["TDS", ["TDS"]], ["AVPH", ["AVPH"]], ["ShaleShaker", ["SS-1", "SS-2", "SS-3"]],
   ["Mud Cleaner", ["MC", "DESILTER", "DESANDER"]], ["Mud Mixer", ["HPP-1", "HPP-2"]],
@@ -30,7 +30,7 @@ const equipmentGroups = [
 ];
 const hvacGroups = [["Drill PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["Mud PCR", ["HVAC-1", "HVAC-2", "HVAC-3"]], ["DCC", ["HVAC-1", "HVAC-2"]], ["AVPH Panel", ["HVAC-1"]], ["AVPH Dog House", ["HVAC-1"]]];
 const FIELDS = ["dprNo", "fromDT", "toDT", "spudDate", "targetDepth", "currentDepth", "currentOperation", "shutdown", "shutdownReason",
-  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "fuelGas", "mechanical", "elecInst", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
+  "energy", "hsdPP", "hsdDSA", "hsdOther", "pol", "grease", "air", "fuelGas", "agitators", "mechanical", "elecInst", "criticalRequirement", "materialsReceived", "materialsSent", "dayCrew", "nightCrew"];
 
 let RIG = null;
 let equipmentStatus = {}, hvacStatus = {};
@@ -282,19 +282,20 @@ function reportFull(d) {
     const vals = ngrGroup[1].map((n, ii) => d.radios["eq_" + gi + "_" + ii]).filter(Boolean);
     if (vals.length) { lines.push("", "  D. NGR STATUS:"); ngrGroup[1].forEach((n, ii) => { const v = d.radios["eq_" + gi + "_" + ii]; if (v) lines.push("    " + n + " – " + v); }); }
   }
-  lines.push("", "3. HVAC STATUS", "");
+  lines.push("", "3. AGITATORS UNDER MAINTENANCE", "", ...teamText(d.agitators));
+  lines.push("", "4. HVAC STATUS", "");
   hvacGroups.forEach((g, gi) => {
     if (gi > 0) lines.push("");
     lines.push("  " + String.fromCharCode(65 + gi) + ". " + g[0]);
     g[1].forEach((n, ii) => lines.push("    " + statusText(n, d.radios["hv_" + gi + "_" + ii])));
   });
-  lines.push("", "4. CRITICAL OPERATIONAL PARAMETERS", "");
+  lines.push("", "5. CRITICAL OPERATIONAL PARAMETERS", "");
   [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA], ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air], ["Fuel Gas Consumption (MMSCM)", d.fuelGas || ""]].forEach((a, i) => lines.push("  " + String.fromCharCode(65 + i) + ". " + a[0] + ": " + a[1]));
-  const teamText = t => { const l = String(t || "").split(/\r?\n/).map(x => x.trim()); while (l.length && !l[l.length - 1]) l.pop(); return l.length ? l.map(x => (x ? "    " + x : "")) : ["    —"]; };
-  lines.push("", "5. MECHANICAL DPR", "", ...teamText(d.mechanical));
-  lines.push("", "6. ELEC & INST DPR", "", ...teamText(d.elecInst));
-  lines.push("", "7. INVENTORY / REQUIREMENT", "", "  A. URGENT / CRITICAL REQUIREMENT:", "    " + (d.criticalRequirement || "—"), "", "  B. MATERIALS RECEIVED FROM BASE:", "    " + (d.materialsReceived || "—"), "", "  C. MATERIALS SENT TO BASE:", "    " + (d.materialsSent || "—"));
-  lines.push("", "8. CREW DETAILS", "");
+  function teamText(t) { const l = String(t || "").split(/\r?\n/).map(x => x.trim()); while (l.length && !l[l.length - 1]) l.pop(); return l.length ? l.map(x => (x ? "    " + x : "")) : ["    —"]; }
+  lines.push("", "6. MECHANICAL DPR", "", ...teamText(d.mechanical));
+  lines.push("", "7. ELEC & INST DPR", "", ...teamText(d.elecInst));
+  lines.push("", "8. INVENTORY / REQUIREMENT", "", "  A. URGENT / CRITICAL REQUIREMENT:", "    " + (d.criticalRequirement || "—"), "", "  B. MATERIALS RECEIVED FROM BASE:", "    " + (d.materialsReceived || "—"), "", "  C. MATERIALS SENT TO BASE:", "    " + (d.materialsSent || "—"));
+  lines.push("", "9. CREW DETAILS", "");
   const crewList = v => String(v || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const dayCrew = crewList(d.dayCrew), nightCrew = crewList(d.nightCrew);
   lines.push("  A. DAY SHIFT:");
@@ -336,6 +337,7 @@ function reportBrief(d) {
   const anyMarked = by["RUN"].length || by["S/B"].length || by["U/M"].length || ngr;
   if (!eq.length && anyMarked) eq.push({ title: "NO EQUIPMENT IN U/M", lines: [] }); // so a reader can tell it was filled in
   section("2. CRITICAL EQUIPMENT STATUS", eq);
+  teamSection("3. AGITATORS UNDER MAINTENANCE", d.agitators);
 
   // 3. HVAC: only what is not running
   const hv = [];
@@ -347,21 +349,21 @@ function reportBrief(d) {
     if (!off.length && !unmarked) hb.push({ title: "ALL UNITS – RUN", lines: [] });
     else if (!unmarked) hb.push({ title: "ALL OTHER UNITS – RUN", lines: [] });
     else if (run.length) hb.push({ title: "RUN: " + run.map(x => x.name).join(", "), lines: [] });
-    section("3. HVAC STATUS", hb);
+    section("4. HVAC STATUS", hb);
   }
 
   // 4. parameters: one per line, top to bottom, with your own wording and units
   const par = [["Total Energy Generated (MWHr)", d.energy], ["Total HSD Consumed – Power Pack (KL)", d.hsdPP], ["Total HSD Issued – DSA Genset (KL)", d.hsdDSA],
     ["HSD Issued to Other Dept (KL)", d.hsdOther], ["POL Consumption (Ltr)", d.pol], ["Grease Consumption (Kg)", d.grease], ["Air Pressure (Kg/cm²)", d.air], ["Fuel Gas Consumption (MMSCM)", d.fuelGas]]
     .filter(x => String(x[1] || "").trim());
-  if (par.length) L.push("", "4. CRITICAL OPERATIONAL PARAMETERS", ...par.map((x, i) => I1 + letter(i) + ") " + x[0] + ": " + String(x[1]).trim()));
+  if (par.length) L.push("", "5. CRITICAL OPERATIONAL PARAMETERS", ...par.map((x, i) => I1 + letter(i) + ") " + x[0] + ": " + String(x[1]).trim()));
 
-  const teamSection = (title, t) => { const b = lines(t).map(x => I1 + x); if (b.length) L.push("", title, ...b); };
-  teamSection("5. MECHANICAL DPR", d.mechanical);
-  teamSection("6. ELEC & INST DPR", d.elecInst);
-  section("7. INVENTORY / REQUIREMENT", [["URGENT / CRITICAL REQUIREMENT:", d.criticalRequirement], ["MATERIALS RECEIVED FROM BASE:", d.materialsReceived], ["MATERIALS SENT TO BASE:", d.materialsSent]]
+  function teamSection(title, t) { const b = lines(t).map(x => I1 + x); if (b.length) L.push("", title, ...b); }
+  teamSection("6. MECHANICAL DPR", d.mechanical);
+  teamSection("7. ELEC & INST DPR", d.elecInst);
+  section("8. INVENTORY / REQUIREMENT", [["URGENT / CRITICAL REQUIREMENT:", d.criticalRequirement], ["MATERIALS RECEIVED FROM BASE:", d.materialsReceived], ["MATERIALS SENT TO BASE:", d.materialsSent]]
     .filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
-  section("8. CREW DETAILS", [["DAY SHIFT:", d.dayCrew], ["NIGHT SHIFT:", d.nightCrew]].filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
+  section("9. CREW DETAILS", [["DAY SHIFT:", d.dayCrew], ["NIGHT SHIFT:", d.nightCrew]].filter(x => lines(x[1]).length).map(x => ({ title: x[0], lines: lines(x[1]) })));
   L.push("", "END OF DPR");
   return L.join("\n");
 }
